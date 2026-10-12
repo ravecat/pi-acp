@@ -889,9 +889,16 @@ export class PiAcpSession {
         if (ev.success === false) {
           if (this.pendingTurn) {
             const reason = stringProp(ev, 'finalError')?.trim()
-            this.pendingTurn.error = reason
-              ? toPromptError(reason)
-              : (this.pendingTurn.error ?? toPromptError(undefined))
+            const error = toPromptError(reason || this.pendingTurn.error)
+            const attempt = ev.attempt
+            this.pendingTurn.error =
+              typeof attempt === 'number' && Number.isSafeInteger(attempt) && attempt > 0
+                ? new RequestError(
+                    error.code,
+                    `${error.message} (after ${attempt} ${attempt === 1 ? 'retry' : 'retries'})`,
+                    error.data
+                  )
+                : error
           }
           break
         }

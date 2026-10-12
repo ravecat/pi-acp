@@ -159,7 +159,10 @@ for (const outcome of ['recovered', 'cancelled']) {
 
 test('retry exhaustion reports finalError without claiming to resume', async () => {
   const { session, proc, conn } = setup()
-  const failed = assert.rejects(session.prompt('one'), /Provider unavailable/)
+  const failed = assert.rejects(session.prompt('one'), {
+    code: -32603,
+    message: 'Internal error: Provider unavailable (after 3 retries)'
+  })
   proc.emit({ type: 'auto_retry_end', success: false, finalError: 'Provider unavailable', attempt: 3 })
   proc.emit({ type: 'agent_settled' })
   await failed
@@ -168,11 +171,27 @@ test('retry exhaustion reports finalError without claiming to resume', async () 
 
 test('retry exhaustion without finalError retains the last provider explanation', async () => {
   const { session, proc } = setup()
-  const failed = assert.rejects(session.prompt('one'), /503: Service unavailable/)
+  const failed = assert.rejects(session.prompt('one'), {
+    code: -32603,
+    message: 'Internal error: 503: Service unavailable (after 1 retry)'
+  })
   assistant(proc, 'error', '503: Service unavailable')
-  proc.emit({ type: 'auto_retry_end', success: false })
+  proc.emit({ type: 'auto_retry_end', success: false, attempt: 1 })
   proc.emit({ type: 'agent_settled' })
   await failed
+})
+
+test('retry exhaustion omits missing or invalid attempt counts', async () => {
+  for (const attempt of [undefined, null, 0, -1, 1.5, '3', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    const { session, proc } = setup()
+    const failed = assert.rejects(session.prompt('one'), {
+      code: -32603,
+      message: 'Internal error: Provider unavailable'
+    })
+    proc.emit({ type: 'auto_retry_end', success: false, finalError: 'Provider unavailable', attempt })
+    proc.emit({ type: 'agent_settled' })
+    await failed
+  }
 })
 
 for (const eventType of ['compaction_end', 'auto_compaction_end']) {

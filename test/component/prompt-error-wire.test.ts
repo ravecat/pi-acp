@@ -109,7 +109,7 @@ for (const source of ['message', 'retry', 'rpc']) {
       t.mock.method(proc, 'prompt', async () => {
         if (source === 'rpc') throw new Error(reason)
         if (source === 'retry') {
-          proc.emit({ type: 'auto_retry_end', success: false, finalError: reason })
+          proc.emit({ type: 'auto_retry_end', success: false, finalError: reason, attempt: 3 })
         } else {
           proc.emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: reason } })
         }
@@ -118,7 +118,7 @@ for (const source of ['message', 'retry', 'rpc']) {
 
       await assert.rejects(prompt('one'), {
         code: -32000,
-        message: 'Authentication required: 401: Your authentication token is invalid.',
+        message: `Authentication required: 401: Your authentication token is invalid.${source === 'retry' ? ' (after 3 retries)' : ''}`,
         data: { authMethods: getAuthMethods() }
       })
       assert.deepEqual(texts(), [])
