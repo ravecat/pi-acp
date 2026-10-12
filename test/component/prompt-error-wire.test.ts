@@ -87,6 +87,18 @@ test('ACP serializes a manual command failure with its reason', { timeout: 3000 
   assert.deepEqual(texts(), [])
 })
 
+test('ACP serializes a token limit after delivering partial output', { timeout: 3000 }, async t => {
+  const { proc, prompt, texts } = setup(t)
+  t.mock.method(proc, 'prompt', async () => {
+    proc.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Partial answer' } })
+    proc.emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'length' } })
+    proc.emit({ type: 'agent_end' })
+    proc.emit({ type: 'agent_settled' })
+  })
+  assert.deepEqual(await prompt('one'), { stopReason: 'max_tokens' })
+  assert.deepEqual(texts(), ['Partial answer'])
+})
+
 for (const source of ['message', 'retry', 'rpc']) {
   test(
     `ACP serializes ${source} authentication failures with the reason and login methods`,

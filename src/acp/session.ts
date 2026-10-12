@@ -42,10 +42,11 @@ type SessionCreateParams = {
   piCommand?: string
 }
 
-export type StopReason = 'end_turn' | 'cancelled'
+export type StopReason = 'end_turn' | 'max_tokens' | 'cancelled'
 
 type PendingTurn = {
   error?: Error
+  completionReason: 'end_turn' | 'max_tokens'
   resolve: (reason: StopReason) => void
   reject: (err: unknown) => void
 }
@@ -492,7 +493,7 @@ export class PiAcpSession {
       return
     }
 
-    const reason: StopReason = this.cancelRequested ? 'cancelled' : 'end_turn'
+    const reason: StopReason = this.cancelRequested ? 'cancelled' : pendingTurn.completionReason
     pendingTurn.resolve(reason)
     this.pendingTurn = null
     this.inAgentLoop = false
@@ -571,7 +572,7 @@ export class PiAcpSession {
     this.cancelRequested = false
     this.inAgentLoop = false
 
-    this.pendingTurn = { resolve: t.resolve, reject: t.reject }
+    this.pendingTurn = { resolve: t.resolve, reject: t.reject, completionReason: 'end_turn' }
 
     // Publish queue depth (0 because we're starting the turn now).
     this.emit({
@@ -606,6 +607,7 @@ export class PiAcpSession {
         )
           break
         const reason = stringProp(message, 'stopReason')
+        this.pendingTurn.completionReason = reason === 'length' ? 'max_tokens' : 'end_turn'
         if (reason === 'error') this.pendingTurn.error = toPromptError(stringProp(message, 'errorMessage'))
         else if (reason === 'aborted') this.cancelRequested = true
         else if (reason) this.pendingTurn.error = undefined

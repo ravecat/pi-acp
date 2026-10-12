@@ -76,6 +76,63 @@ test('recovered retry waits for settlement and clears the provisional failure', 
   assert.equal(await prompt, 'end_turn')
 })
 
+for (const [reasons, expected] of [
+  [['length'], 'max_tokens'],
+  [['length', 'stop'], 'end_turn'],
+  [['stop', 'length'], 'max_tokens'],
+  [['error', 'length'], 'max_tokens']
+] as const) {
+  test(`the last assistant completion determines the stop reason: ${reasons.join(', ')}`, async () => {
+    const { session, proc } = setup()
+    let done = false
+    const prompt = session.prompt('one').finally(() => {
+      done = true
+    })
+    for (const reason of reasons) {
+      assistant(proc, reason, reason === 'error' ? 'Temporary failure' : undefined)
+      proc.emit({ type: 'agent_end' })
+    }
+    proc.emit({ type: 'message_end', message: { role: 'toolResult', content: [] } })
+    await tick()
+    assert.equal(done, false)
+    proc.emit({ type: 'agent_settled' })
+    assert.equal(await prompt, expected)
+  })
+}
+
+test('a final failure overrides an earlier token limit', async () => {
+  const { session, proc } = setup()
+  const failed = assert.rejects(session.prompt('one'), /Provider unavailable/)
+  assistant(proc, 'length')
+  assistant(proc, 'error', 'Provider unavailable')
+  proc.emit({ type: 'agent_settled' })
+  await failed
+})
+
+test('cancellation overrides a token limit', async () => {
+  const { session, proc } = setup()
+  const prompt = session.prompt('one')
+  assistant(proc, 'length')
+  await session.cancel()
+  proc.emit({ type: 'agent_settled' })
+  assert.equal(await prompt, 'cancelled')
+})
+
+test('a token limit does not carry over to the next queued prompt', async () => {
+  const { session, proc } = setup()
+  const first = session.prompt('one')
+  const second = session.prompt('two')
+  assistant(proc, 'length')
+  proc.emit({ type: 'agent_settled' })
+  assert.equal(await first, 'max_tokens')
+  assert.deepEqual(
+    proc.prompts.map(prompt => prompt.message),
+    ['one', 'two']
+  )
+  proc.emit({ type: 'agent_settled' })
+  assert.equal(await second, 'end_turn')
+})
+
 for (const outcome of ['recovered', 'cancelled']) {
   test(`authentication failure stays provisional until the turn is ${outcome}`, async () => {
     const { session, proc, conn } = setup()
