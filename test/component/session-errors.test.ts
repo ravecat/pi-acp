@@ -76,6 +76,30 @@ test('recovered retry waits for settlement and clears the provisional failure', 
   assert.equal(await prompt, 'end_turn')
 })
 
+for (const outcome of ['recovered', 'cancelled']) {
+  test(`authentication failure stays provisional until the turn is ${outcome}`, async () => {
+    const { session, proc, conn } = setup()
+    let done = false
+    const prompt = session.prompt('one').finally(() => {
+      done = true
+    })
+    assistant(proc, 'error', '401: Token expired')
+    proc.emit({ type: 'agent_end', willRetry: true })
+    await tick()
+    assert.equal(done, false)
+    if (outcome === 'recovered') {
+      assistant(proc, 'stop')
+      proc.emit({ type: 'auto_retry_end', success: true })
+    } else {
+      await session.cancel()
+      proc.emit({ type: 'auto_retry_end', success: false, finalError: '401: Token expired' })
+    }
+    proc.emit({ type: 'agent_settled' })
+    assert.equal(await prompt, outcome === 'recovered' ? 'end_turn' : 'cancelled')
+    assert.ok(texts(conn).every(text => !text.includes('401') && !text.includes('Token expired')))
+  })
+}
+
 test('retry exhaustion reports finalError without claiming to resume', async () => {
   const { session, proc, conn } = setup()
   const failed = assert.rejects(session.prompt('one'), /Provider unavailable/)

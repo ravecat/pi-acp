@@ -19,7 +19,6 @@ import {
   type PiSessionStats
 } from '../pi-rpc/process.js'
 import { toPromptError } from './prompt-error.js'
-import { maybeAuthRequiredError } from './auth-required.js'
 import { SessionStore } from './session-store.js'
 import { expandSlashCommand, type FileSlashCommand } from './slash-commands.js'
 import {
@@ -586,7 +585,7 @@ export class PiAcpSession {
     const pendingTurn = this.pendingTurn
     this.proc.prompt(t.message, t.images).catch(err => {
       if (this.disposed || this.terminalError || this.pendingTurn !== pendingTurn) return
-      const error = maybeAuthRequiredError(err) ?? toPromptError(err)
+      const error = toPromptError(err)
       this.settleTurns(this.cancelRequested ? undefined : error)
     })
   }

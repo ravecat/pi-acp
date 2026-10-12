@@ -1,6 +1,13 @@
 import { RequestError } from '@agentclientprotocol/sdk'
+import { getAuthMethods } from './auth.js'
 
 const FALLBACK = 'The agent could not complete the request. No error details were provided.'
+const AUTH_FAILURE_PATTERNS = [
+  /\b401\b|\bunauthorized\b|\bauthentication(?:_error|\s+(?:failed|required))\b/i,
+  /\b(?:invalid|incorrect|expired|missing|revoked)\s+(?:api[ _-]?key|(?:(?:authentication|access|refresh|auth)\s+)?token|credentials?)\b/i,
+  /\b(?:api[ _-]?key|token|credentials?)\s+(?:(?:is|has|was)\s+)?(?:invalid|incorrect|expired|missing|revoked|required|not (?:valid|found|configured|set|provided))\b/i,
+  /\bno\s+(?:api[ _-]?key|credentials?)\b/i
+]
 
 function messageOf(value: unknown): string | undefined {
   if (typeof value === 'string') return value.trim() || undefined
@@ -25,6 +32,8 @@ export function toPromptError(error: unknown): RequestError {
       // Preserve non-JSON provider explanations.
     }
   }
+  const authRequired = AUTH_FAILURE_PATTERNS.some(pattern => pattern.test(message))
   message = message.length > 4000 ? `${message.slice(0, 4000)}...` : message
+  if (authRequired) return RequestError.authRequired({ authMethods: getAuthMethods() }, message)
   return RequestError.internalError(undefined, message)
 }
